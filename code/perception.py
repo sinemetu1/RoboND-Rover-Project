@@ -110,49 +110,41 @@ def obstacles_thresh(img):
     return color_thresh(img, rgb_min=(0, 0, 0), rgb_max=(20, 160, 160))
 
 
+def within_range(v):
+  return (v >= 0.0 and v <= 1.0) or (v >= 359.0 and v <= 360.0)
+
+
 # Apply the above functions in succession and update the Rover state accordingly
 def perception_step(Rover):
     xpos, ypos = Rover.pos
     yaw = Rover.yaw
-    # Perform perception steps to update Rover()
-    # TODO: 
-    # NOTE: camera image is coming to you in Rover.img
-    # 1) Define source and destination points for perspective transform
     dst_size = 5
     bottom_offset = 6
     source = np.float32([[14, 140], [301 ,140],[200, 96], [118, 96]])
     destination = get_destination(Rover.img, dst_size, bottom_offset)
-    # 2) Apply perspective transform
     warped = perspect_transform(Rover.img, source, destination)
-    # 3) Apply color threshold to identify navigable terrain/obstacles/rock samples
+
+    Rover.dists = {}
+    Rover.angles = {}
+
     i = 2
-    for m in (obstacles_thresh, rocks_thresh, color_thresh):
+    for name, m in (('nav', color_thresh), ('rocks', rocks_thresh), ('obstacles', obstacles_thresh)):
         threshed = m(warped)
-        # 4) Update Rover.vision_image (this will be displayed on left side of screen)
-            # Example: Rover.vision_image[:,:,0] = obstacle color-thresholded binary image
-            #          Rover.vision_image[:,:,1] = rock_sample color-thresholded binary image
-            #          Rover.vision_image[:,:,2] = navigable terrain color-thresholded binary image
-        Rover.vision_image[:,:,i] = threshed
-        # 5) Convert map image pixel values to rover-centric coords
+        Rover.vision_image[:,:,i] = threshed * 255
         xpix, ypix = rover_coords(threshed)
-        scale = 10
-        # 6) Convert rover-centric pixel values to world coordinates
+        scale = 20
         x_world, y_world = pix_to_world(xpix, ypix, xpos, 
                                         ypos, yaw, 
                                         Rover.worldmap.shape[0], scale)
-        # 7) Update Rover worldmap (to be displayed on right side of screen)
-            # Example: Rover.worldmap[obstacle_y_world, obstacle_x_world, 0] += 1
-            #          Rover.worldmap[rock_y_world, rock_x_world, 1] += 1
-            #          Rover.worldmap[navigable_y_world, navigable_x_world, 2] += 1
-        Rover.worldmap[y_world, x_world, i] += 1
-        i -= 1
+        if within_range(Rover.pitch) and within_range(Rover.roll):
+            Rover.worldmap[y_world, x_world, i] += 1
 
+        dist, angles = to_polar_coords(xpix, ypix)
+        Rover.dists[name] = dist
+        Rover.angles[name] = angles
+        if name == 'nav':
+            Rover.nav_dists = dist
+            Rover.nav_angles = angles
 
-    # 8) Convert rover-centric pixel positions to polar coordinates
-    # Update Rover pixel distances and angles
-        # Rover.nav_dists = rover_centric_pixel_distances
-        # Rover.nav_angles = rover_centric_angles
-    dist, angles = to_polar_coords(xpix, ypix)
-    Rover.nav_dists = dist
-    Rover.nav_angles = angles
+        i =  i - 1
     return Rover
